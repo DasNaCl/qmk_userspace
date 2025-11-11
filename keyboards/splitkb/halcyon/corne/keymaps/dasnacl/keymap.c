@@ -136,18 +136,16 @@ void ql_finished(tap_dance_state_t *state, void *user_data) {
   ql_tap_state.state = cur_dance(state);
   switch (ql_tap_state.state) {
     case TD_SINGLE_TAP:
-      layer_on(1);
+      set_oneshot_layer(1, ONESHOT_START);
     break;
     case TD_SINGLE_HOLD:
       layer_on(3);
     break;
     case TD_DOUBLE_TAP:
-      // If not already set, then switch the layer on
-      layer_on(2);
+      set_oneshot_layer(2, ONESHOT_START);
     break;
     case TD_DOUBLE_TAP_HOLD:
-      // Check to see if the layer is already set
-      layer_on(3);
+      layer_on(2);
     default:
     break;
   }
@@ -156,9 +154,14 @@ void ql_finished(tap_dance_state_t *state, void *user_data) {
 void ql_reset(tap_dance_state_t *state, void *user_data) {
     // If the key was held down and now is released then switch off the layer
     if (ql_tap_state.state == TD_SINGLE_HOLD) {
-        layer_off(3);
+      layer_off(3);
+      reset_oneshot_layer();
     } else if (ql_tap_state.state == TD_DOUBLE_TAP_HOLD) {
-        layer_off(3);
+      layer_off(2);
+      reset_oneshot_layer();
+    } else if (ql_tap_state.state == TD_SINGLE_TAP
+            || ql_tap_state.state == TD_DOUBLE_TAP) {
+      clear_oneshot_layer_state(ONESHOT_PRESSED);
     }
     ql_tap_state.state = TD_NONE;
 }
