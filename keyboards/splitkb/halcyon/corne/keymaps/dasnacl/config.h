@@ -1,0 +1,8 @@
+#pragma once
+
+#define LEADER_PER_KEY_TIMING
+#define LEADER_TIMEOUT 250
+
+#define BOTH_SHIFTS_TURNS_ON_CAPS_WORD
+
+#define PERMISSIVE_HOLD
