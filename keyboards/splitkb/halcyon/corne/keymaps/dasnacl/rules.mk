@@ -2,6 +2,7 @@
 USER_NAME := halcyon_modules
 MOUSEKEY_ENABLE = yes
 TAP_DANCE_ENABLE = yes
+UNICODEMAP_ENABLE = yes
 
 # like vim
 LEADER_ENABLE = yes
@@ -13,9 +14,5 @@ CAPS_WORD_ENABLE = yes
 # https://docs.qmk.fm/features/layer_lock
 LAYER_LOCK_ENABLE= yes
 
-
-
 ONESHOT_TAP_TOGGLE = yes
-
-
 
