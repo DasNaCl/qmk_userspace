@@ -100,9 +100,9 @@ const uint32_t PROGMEM unicode_map[] = {
   [UPPER_OMEGA]   = 0x3A9, //Ω
   //logic
   [LOWER_AND]     = 0x2227, //∧
-  [UPPER_AND]     = 0x22C0, //⋀
+  [UPPER_AND]     = 0x2229, //∩
   [LOWER_OR]      = 0x2228, //∨
-  [UPPER_OR]      = 0x22C1, //⋁
+  [UPPER_OR]      = 0x222A, //∪
   [SUBSETS]       = 0x2286, //⊆
   [SUPSETS]       = 0x2287, //⊇
   [IN_EL]         = 0x2208, //∈
