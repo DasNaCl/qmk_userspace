@@ -7,7 +7,10 @@
 #  include "keymap.h"
 #endif
 
+#include <transactions.h>
 #include <keymap_german.h>
+
+#include "print.h"
 
 enum unicode_names {
   // greek
@@ -179,6 +182,7 @@ void ql_reset(tap_dance_state_t *state, void *user_data);
 #define SFTLLCK MT(MOD_LSFT,KC_0) // act as lshift on press, as layer lock on tap. KC_0 is placeholder
 #define SFTRLCK MT(MOD_RSFT,KC_0) // act as rshift on press, as layer lock on tap. KC_0 is placeholder
 
+// clang-format off
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
   [0] = LAYOUT_corne_hlc(
         KC_ESC,       DE_X,       DE_V,       DE_L,       DE_C,       DE_W,                        DE_K,       DE_H,       DE_G,       DE_F,       DE_Q,      DE_SS,
@@ -213,11 +217,9 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
                                            XXXXXXX,    XXXXXXX,    XXXXXXX,                     XXXXXXX,    XXXXXXX,    XXXXXXX,                                     _______,_______,_______,_______,_______, _______,_______,_______,_______,_______),
     */
 };
+// clang-format on
 
-void leader_start_user(void) {
-}
 void leader_end_user(void) {
-
     /*
     else if (leader_sequence_two_keys(KC_D, KC_D)) {
     // Leader, d, d => Ctrl+A, Ctrl+C
@@ -230,27 +232,6 @@ void leader_end_user(void) {
     tap_code16(LGUI(KC_S));
   }
   */
-}
-layer_state_t layer_state_set_user(layer_state_t state) {
-  /*
-  switch (get_highest_layer(state)) {
-  case _RAISE:
-      rgblight_setrgb (0x00,  0x00, 0xFF);
-      break;
-  case _LOWER:
-      rgblight_setrgb (0xFF,  0x00, 0x00);
-      break;
-  case _PLOVER:
-      rgblight_setrgb (0x00,  0xFF, 0x00);
-      break;
-  case _ADJUST:
-      rgblight_setrgb (0x7A,  0x00, 0xFF);
-      break;
-  default: //  for any other layers, or the default layer
-      rgblight_setrgb (0x00,  0xFF, 0xFF);
-      break;
-  }*/
-  return state;
 }
 
 // Determine the current tap dance state
@@ -310,7 +291,51 @@ tap_dance_action_t tap_dance_actions[] = {
   [TD_LYR]  = ACTION_TAP_DANCE_FN_ADVANCED(NULL, ql_finished, ql_reset),
 };
 
+uint32_t led_highlight_bitmap = 0;
+
+/// MASTER -> SLAVE
+// This function handles receiving data from the master side.
+void user_config_sync(uint8_t initiator2target_buffer_size, const void* initiator2target_buffer,
+                      uint8_t target2initiator_buffer_size, void* target2initiator_buffer) {
+  if (initiator2target_buffer_size == sizeof(led_highlight_bitmap)) {
+    memcpy(&led_highlight_bitmap, initiator2target_buffer, initiator2target_buffer_size);
+  }
+}
+// Part of the "game loop" of a keyboard.
+// Send data every so often
+void housekeeping_task_user(void) {
+  if (is_keyboard_master()) {
+    static uint32_t last_sync = 0;
+    if (timer_elapsed32(last_sync) > 250) {
+      if (transaction_rpc_send(USER_SYNC_A, sizeof(led_highlight_bitmap), &led_highlight_bitmap)) {
+        last_sync = timer_read32();
+      }
+    }
+  }
+}
+
+// indexing into led_highlight_bitmap
+// Layer 0
+uint32_t const LGUI_LED_IDX = 1;
+uint32_t const RGUI_LED_IDX = 2;
+uint32_t const LCTL_LED_IDX = 3;
+uint32_t const RCTL_LED_IDX = 4;
+// Layer 4 // TODO: can we overload indices?
+uint32_t const LT4L_LED_IDX = 5;
+uint32_t const LT4R_LED_IDX = 6;
+volatile uint8_t const gui_led = 15;
+volatile uint8_t const ctl_led = 18;
+volatile uint8_t const lt4_led = 17;
+
+void set_mask_at(uint32_t idx, bool value) {
+  led_highlight_bitmap = value ? led_highlight_bitmap | (1 << idx)
+                               : led_highlight_bitmap & ~(1 << idx) ;
+}
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
+#ifdef CONSOLE_ENABLE
+  uprintf("KL: kc: 0x%04X, col: %2u, row: %2u, pressed: %u, time: %5u, int: %u, count: %u\n", keycode, record->event.key.col, record->event.key.row, record->event.pressed, record->event.time, record->tap.interrupted, record->tap.count);
+#endif
   switch (keycode) {
   case SFTLLCK:
     if (record->tap.count) {
@@ -318,14 +343,87 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         // Toggle the lock on the highest layer.
         layer_lock_invert(get_highest_layer(layer_state));
       }
-      return false;
+      return false; // <- skip all further processing of this key
     }
     break;
+  // highlight if pressed due to different action
+  case USR_LCTL_U: set_mask_at(LCTL_LED_IDX, record->event.pressed); break;
+  case USR_RCTL_D: set_mask_at(RCTL_LED_IDX, record->event.pressed); break;
+  case USR_LGUI_E: set_mask_at(LGUI_LED_IDX, record->event.pressed); break;
+  case USR_RGUI_N: set_mask_at(RGUI_LED_IDX, record->event.pressed); break;
+  case LT(4,DE_I): set_mask_at(LT4L_LED_IDX, record->event.pressed); break;
+  case LT(4,DE_T): set_mask_at(LT4R_LED_IDX, record->event.pressed); break;
   }
 
   return true;
 }
 
+void keyboard_post_init_user(void) {
+  // setup communication
+  transaction_register_rpc(USER_SYNC_A, user_config_sync);
+
+  // base rgb settings
+  rgb_matrix_enable_noeeprom();
+  rgb_matrix_mode_noeeprom(RGB_MATRIX_SOLID_MULTISPLASH);
+  rgb_matrix_sethsv_noeeprom(180, 255, 255);
+
+  // Customise these values to desired behaviour
+  //debug_enable=true;
+  //debug_matrix=true;
+  //debug_keyboard=true;
+  //debug_mouse=true;
+}
+bool rgb_matrix_indicators_advanced_user(uint8_t led_min, uint8_t led_max) {
+  for (uint8_t i = led_min; i < led_max; i++) {
+    switch(get_highest_layer(layer_state|default_layer_state)) {
+    case 0:
+      if (is_keyboard_master()) {
+        // MASTER
+        if (!!(led_highlight_bitmap & (1 << LGUI_LED_IDX))) {
+          rgb_matrix_set_color(gui_led, RGB_CYAN);
+        }
+        if (!!(led_highlight_bitmap & (1 << LCTL_LED_IDX))) {
+          rgb_matrix_set_color(ctl_led, RGB_CYAN);
+        }
+        if (!!(led_highlight_bitmap & (1 << LT4L_LED_IDX))) {
+          rgb_matrix_set_color(lt4_led, RGB_CYAN);
+        }
+      } else {
+        // SLAVE
+        if (!!(led_highlight_bitmap & (1 << RGUI_LED_IDX))) {
+          rgb_matrix_set_color(gui_led, RGB_CYAN);
+        }
+        if (!!(led_highlight_bitmap & (1 << RCTL_LED_IDX))) {
+          rgb_matrix_set_color(ctl_led, RGB_CYAN);
+        }
+        if (!!(led_highlight_bitmap & (1 << LT4R_LED_IDX))) {
+          rgb_matrix_set_color(lt4_led, RGB_CYAN);
+        }
+      }
+    break;
+    case 1:
+      rgb_matrix_set_color(i, RGB_YELLOW);
+    break;
+    case 2:
+      rgb_matrix_set_color(i, RGB_BLUE);
+    break;
+    case 3:
+      rgb_matrix_set_color(i, RGB_RED);
+    break;
+    case 4:
+      rgb_matrix_set_color(i, RGB_PURPLE);
+      if (is_keyboard_master() && !!(led_highlight_bitmap & (1 << LT4L_LED_IDX))) {
+        rgb_matrix_set_color(lt4_led, RGB_CYAN);
+      } else if (!is_keyboard_master() && !!(led_highlight_bitmap & (1 << LT4R_LED_IDX))) {
+        rgb_matrix_set_color(lt4_led, RGB_CYAN);
+      }
+    break;
+    default:
+    break;
+    }
+  }
+  return false;
+}
 
 #ifdef OTHER_KEYMAP_C
 #  include OTHER_KEYMAP_C
